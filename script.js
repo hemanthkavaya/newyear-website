@@ -23,9 +23,7 @@ let remoteStream = new MediaStream();
 let peerConnection;
 
 const servers = {
-    iceServers: [
-        { urls: ["stun:stun.l.google.com:19302"] }
-    ]
+    iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }]
 };
 
 // Get video elements
@@ -37,10 +35,7 @@ const remoteVideo = document.getElementById("remoteVideo");
 // ------------------------------
 async function startCamera() {
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true
-        });
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
         console.log("Camera started");
     } catch (err) {
@@ -51,14 +46,14 @@ async function startCamera() {
 startCamera();
 
 // ------------------------------
-// Helper: Generate 4-digit unique Call ID
+// 4-digit unique Call ID
 // ------------------------------
 async function generateUniqueCallId() {
     let callId;
     let exists = true;
 
     while (exists) {
-        callId = Math.floor(1000 + Math.random() * 9000).toString();
+        callId = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit number
         const snapshot = await db.ref("calls/" + callId).get();
         exists = snapshot.exists();
     }
@@ -80,9 +75,7 @@ document.getElementById("startCall").onclick = async () => {
     peerConnection = new RTCPeerConnection(servers);
 
     // Add local tracks
-    localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-    });
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
     // Show remote stream
     peerConnection.ontrack = (event) => {
@@ -91,13 +84,12 @@ document.getElementById("startCall").onclick = async () => {
     };
 
     try {
-        // Generate 4-digit unique Call ID
+        // Generate 4-digit Call ID
         const callId = await generateUniqueCallId();
         console.log("Generated Call ID:", callId);
 
         const callRef = db.ref("calls/" + callId);
 
-        // Show alert with Call ID
         alert("Share this Call ID with your GF:\n\n" + callId);
 
         // Create offer
@@ -112,15 +104,12 @@ document.getElementById("startCall").onclick = async () => {
             const data = snapshot.val();
             if (!data) return;
             const answer = JSON.parse(data);
-            if (!peerConnection.currentRemoteDescription)
-                await peerConnection.setRemoteDescription(answer);
+            if (!peerConnection.currentRemoteDescription) await peerConnection.setRemoteDescription(answer);
         });
 
         // ICE candidates
         peerConnection.onicecandidate = event => {
-            if (event.candidate) {
-                callRef.child("offerCandidates").push(JSON.stringify(event.candidate));
-            }
+            if (event.candidate) callRef.child("offerCandidates").push(JSON.stringify(event.candidate));
         };
 
         // Listen for remote ICE
@@ -140,7 +129,6 @@ document.getElementById("startCall").onclick = async () => {
 // ------------------------------
 document.getElementById("joinCall").onclick = async () => {
     const callId = prompt("Enter 4-digit Call ID:");
-
     if (!callId) return alert("Call ID is required!");
 
     const callRef = db.ref("calls/" + callId);
@@ -153,9 +141,7 @@ document.getElementById("joinCall").onclick = async () => {
     peerConnection = new RTCPeerConnection(servers);
 
     // Add local stream
-    localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
-    });
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
     peerConnection.ontrack = (event) => {
         remoteStream.addTrack(event.track);
@@ -179,9 +165,7 @@ document.getElementById("joinCall").onclick = async () => {
 
         // ICE candidates
         peerConnection.onicecandidate = event => {
-            if (event.candidate) {
-                callRef.child("answerCandidates").push(JSON.stringify(event.candidate));
-            }
+            if (event.candidate) callRef.child("answerCandidates").push(JSON.stringify(event.candidate));
         };
 
         // Listen for remote ICE
@@ -201,19 +185,14 @@ document.getElementById("joinCall").onclick = async () => {
 // ------------------------------
 document.getElementById("shareScreen").onclick = async () => {
     try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({
-            video: true
-        });
-
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         const screenTrack = screenStream.getVideoTracks()[0];
         const sender = peerConnection.getSenders().find(s => s.track.kind === "video");
-
         sender.replaceTrack(screenTrack);
 
         screenTrack.onended = () => {
             sender.replaceTrack(localStream.getVideoTracks()[0]);
         };
-
     } catch (err) {
         console.error("Error sharing screen:", err);
         alert("Failed to share screen.");
