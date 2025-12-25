@@ -11,7 +11,6 @@ const firebaseConfig = {
   measurementId: "G-JD795788HH"
 };
 
-// Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
@@ -22,179 +21,133 @@ let localStream;
 let remoteStream = new MediaStream();
 let peerConnection;
 
-const servers = {
-    iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }]
-};
+const servers = { iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }] };
 
-// Get video elements
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 
 // ------------------------------
-// 3. Get Camera Stream
+// 3. Start Camera
 // ------------------------------
 async function startCamera() {
-    try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localVideo.srcObject = localStream;
-        console.log("Camera started");
-    } catch (err) {
-        console.error("Error accessing camera:", err);
-        alert("Cannot access camera. Please check permissions.");
-    }
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localVideo.srcObject = localStream;
+    console.log("Camera started");
+  } catch (err) {
+    console.error("Camera error:", err);
+    alert("Cannot access camera. Please allow permissions.");
+  }
 }
 startCamera();
 
 // ------------------------------
-// 4-digit unique Call ID
+// 4-digit Call ID Generator
 // ------------------------------
 async function generateUniqueCallId() {
-    let callId;
-    let exists = true;
+  let callId;
+  let exists = true;
 
-    while (exists) {
-        callId = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit number
-        const snapshot = await db.ref("calls/" + callId).get();
-        exists = snapshot.exists();
-    }
+  while (exists) {
+    callId = Math.floor(1000 + Math.random() * 9000).toString();
+    const snapshot = await db.ref("calls/" + callId).get();
+    exists = snapshot.exists();
+  }
 
-    return callId;
+  return callId;
 }
 
 // ------------------------------
-// 4. Start a Call (You)
+// 4. Start Call
 // ------------------------------
 document.getElementById("startCall").onclick = async () => {
-    console.log("Start Call clicked");
+  if (!localStream) return alert("Camera not ready!");
 
-    if (!localStream) {
-        alert("Camera not ready yet!");
-        return;
-    }
+  peerConnection = new RTCPeerConnection(servers);
 
-    peerConnection = new RTCPeerConnection(servers);
+  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-    // Add local tracks
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+  peerConnection.ontrack = event => {
+    remoteStream.addTrack(event.track);
+    remoteVideo.srcObject = remoteStream;
+  };
 
-    // Show remote stream
-    peerConnection.ontrack = (event) => {
-        remoteStream.addTrack(event.track);
-        remoteVideo.srcObject = remoteStream;
-    };
+  const callId = await generateUniqueCallId();
+  alert("Share this Call ID with your GF:\n\n" + callId);
 
-    try {
-        // Generate 4-digit Call ID
-        const callId = await generateUniqueCallId();
-        console.log("Generated Call ID:", callId);
+  const callRef = db.ref("calls/" + callId);
 
-        const callRef = db.ref("calls/" + callId);
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
 
-        alert("Share this Call ID with your GF:\n\n" + callId);
+  await callRef.child("offer").set(JSON.stringify(offer));
 
-        // Create offer
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
+  peerConnection.onicecandidate = event => {
+    if (event.candidate) callRef.child("offerCandidates").push(JSON.stringify(event.candidate));
+  };
 
-        // Save offer to Firebase
-        await callRef.child("offer").set(JSON.stringify(offer));
-
-        // Listen for answer
-        callRef.child("answer").on("value", async snapshot => {
-            const data = snapshot.val();
-            if (!data) return;
-            const answer = JSON.parse(data);
-            if (!peerConnection.currentRemoteDescription) await peerConnection.setRemoteDescription(answer);
-        });
-
-        // ICE candidates
-        peerConnection.onicecandidate = event => {
-            if (event.candidate) callRef.child("offerCandidates").push(JSON.stringify(event.candidate));
-        };
-
-        // Listen for remote ICE
-        callRef.child("answerCandidates").on("child_added", snapshot => {
-            const candidate = JSON.parse(snapshot.val());
-            peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        });
-
-    } catch (err) {
-        console.error("Error starting call:", err);
-        alert("Failed to start call. Check console for details.");
-    }
+  callRef.child("answer").on("value", async snapshot => {
+    const data = snapshot.val();
+    if (!data) return;
+    await peerConnection.setRemoteDescription(JSON.parse(data));
+  });
 };
 
 // ------------------------------
-// 5. Join a Call (Your GF)
+// 5. Join Call
 // ------------------------------
 document.getElementById("joinCall").onclick = async () => {
-    const callId = prompt("Enter 4-digit Call ID:");
-    if (!callId) return alert("Call ID is required!");
+  const callId = prompt("Enter 4-digit Call ID:");
+  if (!callId) return alert("Call ID required!");
 
-    const callRef = db.ref("calls/" + callId);
+  if (!localStream) return alert("Camera not ready!");
 
-    if (!localStream) {
-        alert("Camera not ready yet!");
-        return;
-    }
+  peerConnection = new RTCPeerConnection(servers);
 
-    peerConnection = new RTCPeerConnection(servers);
+  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-    // Add local stream
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+  peerConnection.ontrack = event => {
+    remoteStream.addTrack(event.track);
+    remoteVideo.srcObject = remoteStream;
+  };
 
-    peerConnection.ontrack = (event) => {
-        remoteStream.addTrack(event.track);
-        remoteVideo.srcObject = remoteStream;
-    };
+  const callRef = db.ref("calls/" + callId);
+  const snapshot = await callRef.child("offer").get();
+  if (!snapshot.exists()) return alert("Invalid Call ID!");
 
-    try {
-        // Get offer
-        const snapshot = await callRef.child("offer").get();
-        if (!snapshot.exists()) return alert("Invalid Call ID!");
-        const offer = JSON.parse(snapshot.val());
+  const offer = JSON.parse(snapshot.val());
+  await peerConnection.setRemoteDescription(offer);
 
-        await peerConnection.setRemoteDescription(offer);
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
 
-        // Create answer
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
+  await callRef.child("answer").set(JSON.stringify(answer));
 
-        // Send answer to Firebase
-        await callRef.child("answer").set(JSON.stringify(answer));
+  peerConnection.onicecandidate = event => {
+    if (event.candidate) callRef.child("answerCandidates").push(JSON.stringify(event.candidate));
+  };
 
-        // ICE candidates
-        peerConnection.onicecandidate = event => {
-            if (event.candidate) callRef.child("answerCandidates").push(JSON.stringify(event.candidate));
-        };
-
-        // Listen for remote ICE
-        callRef.child("offerCandidates").on("child_added", snapshot => {
-            const candidate = JSON.parse(snapshot.val());
-            peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        });
-
-    } catch (err) {
-        console.error("Error joining call:", err);
-        alert("Failed to join call. Check console for details.");
-    }
+  callRef.child("offerCandidates").on("child_added", snapshot => {
+    const candidate = JSON.parse(snapshot.val());
+    peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+  });
 };
 
 // ------------------------------
-// 6. Screen Sharing (You)
+// 6. Screen Sharing
 // ------------------------------
 document.getElementById("shareScreen").onclick = async () => {
-    try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-        const screenTrack = screenStream.getVideoTracks()[0];
-        const sender = peerConnection.getSenders().find(s => s.track.kind === "video");
-        sender.replaceTrack(screenTrack);
+  try {
+    const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    const screenTrack = screenStream.getVideoTracks()[0];
+    const sender = peerConnection.getSenders().find(s => s.track.kind === "video");
+    sender.replaceTrack(screenTrack);
 
-        screenTrack.onended = () => {
-            sender.replaceTrack(localStream.getVideoTracks()[0]);
-        };
-    } catch (err) {
-        console.error("Error sharing screen:", err);
-        alert("Failed to share screen.");
-    }
+    screenTrack.onended = () => {
+      sender.replaceTrack(localStream.getVideoTracks()[0]);
+    };
+  } catch (err) {
+    console.error("Screen share error:", err);
+    alert("Failed to share screen.");
+  }
 };
