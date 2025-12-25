@@ -42,23 +42,7 @@ async function startCamera() {
 startCamera();
 
 // ------------------------------
-// 4-digit Call ID Generator
-// ------------------------------
-async function generateUniqueCallId() {
-  let callId;
-  let exists = true;
-
-  while (exists) {
-    callId = Math.floor(1000 + Math.random() * 9000).toString();
-    const snapshot = await db.ref("calls/" + callId).get();
-    exists = snapshot.exists();
-  }
-
-  return callId;
-}
-
-// ------------------------------
-// 4. Start Call
+// 4. Start Call with STATIC ID
 // ------------------------------
 document.getElementById("startCall").onclick = async () => {
   if (!localStream) return alert("Camera not ready!");
@@ -72,7 +56,8 @@ document.getElementById("startCall").onclick = async () => {
     remoteVideo.srcObject = remoteStream;
   };
 
-  const callId = await generateUniqueCallId();
+  // STATIC call ID
+  const callId = "1234";
   alert("Share this Call ID with your GF:\n\n" + callId);
 
   const callRef = db.ref("calls/" + callId);
@@ -97,7 +82,7 @@ document.getElementById("startCall").onclick = async () => {
 // 5. Join Call
 // ------------------------------
 document.getElementById("joinCall").onclick = async () => {
-  const callId = prompt("Enter 4-digit Call ID:");
+  const callId = prompt("Enter Call ID (use 1234):");
   if (!callId) return alert("Call ID required!");
 
   if (!localStream) return alert("Camera not ready!");
