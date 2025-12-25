@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Theatre Together</title>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+</head>
+<body>
+
+    <h1 class="title">🎬 Theatre With My Love ❤️</h1>
+
+    <div class="video-container">
+
+        <!-- Your Camera -->
+        <video id="localVideo" autoplay playsinline></video>
+
+        <!-- GF Camera -->
+        <video id="remoteVideo" autoplay playsinline></video>
+
+    </div>
+
+    <div class="buttons">
+        <button id="startCall">Start Call</button>
+        <button id="joinCall">Join Call</button>
+        <button id="shareScreen">Share Screen</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
