@@ -15,7 +15,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-
 // ------------------------------
 // 2. WebRTC Setup
 // ------------------------------
@@ -33,7 +32,6 @@ const servers = {
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 
-
 // ------------------------------
 // 3. Get Camera Stream
 // ------------------------------
@@ -42,12 +40,25 @@ async function startCamera() {
         video: true,
         audio: true
     });
-
     localVideo.srcObject = localStream;
 }
-
 startCamera();
 
+// ------------------------------
+// Helper: Generate 4-digit Call ID
+// ------------------------------
+async function generateUniqueCallId() {
+    let callId;
+    let exists = true;
+
+    while (exists) {
+        callId = Math.floor(1000 + Math.random() * 9000).toString();
+        const snapshot = await db.ref("calls/" + callId).get();
+        exists = snapshot.exists(); // Check if call ID already exists
+    }
+
+    return callId;
+}
 
 // ------------------------------
 // 4. Start a Call (You)
@@ -67,9 +78,9 @@ document.getElementById("startCall").onclick = async () => {
         remoteVideo.srcObject = remoteStream;
     };
 
-    // Create call ID
-    const callRef = db.ref("calls").push();
-    const callId = callRef.key;
+    // Generate 4-digit unique Call ID
+    const callId = await generateUniqueCallId();
+    const callRef = db.ref("calls/" + callId);
 
     alert("Share this Call ID with your GF:\n\n" + callId);
 
@@ -84,7 +95,6 @@ document.getElementById("startCall").onclick = async () => {
     callRef.child("answer").on("value", async snapshot => {
         const data = snapshot.val();
         if (!data) return;
-
         const answer = JSON.parse(data);
         if (!peerConnection.currentRemoteDescription)
             await peerConnection.setRemoteDescription(answer);
@@ -104,12 +114,13 @@ document.getElementById("startCall").onclick = async () => {
     });
 };
 
-
 // ------------------------------
 // 5. Join a Call (Your GF)
 // ------------------------------
 document.getElementById("joinCall").onclick = async () => {
-    const callId = prompt("Enter Call ID:");
+    const callId = prompt("Enter 4-digit Call ID:");
+
+    if (!callId) return alert("Call ID is required!");
 
     const callRef = db.ref("calls/" + callId);
 
@@ -127,6 +138,7 @@ document.getElementById("joinCall").onclick = async () => {
 
     // Get offer
     const snapshot = await callRef.child("offer").get();
+    if (!snapshot.exists()) return alert("Invalid Call ID!");
     const offer = JSON.parse(snapshot.val());
 
     await peerConnection.setRemoteDescription(offer);
@@ -152,7 +164,6 @@ document.getElementById("joinCall").onclick = async () => {
     });
 };
 
-
 // ------------------------------
 // 6. Screen Sharing (You)
 // ------------------------------
@@ -162,7 +173,6 @@ document.getElementById("shareScreen").onclick = async () => {
     });
 
     const screenTrack = screenStream.getVideoTracks()[0];
-
     const sender = peerConnection.getSenders().find(s => s.track.kind === "video");
 
     sender.replaceTrack(screenTrack);
