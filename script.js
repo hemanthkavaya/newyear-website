@@ -1,5 +1,5 @@
 // ------------------------------
-// Firebase Configuration
+// Firebase Config
 // ------------------------------
 const firebaseConfig = {
   apiKey: "AIzaSyB86zcSMsbtHruh1sd-TMvwgqRcpheEVbw",
@@ -15,7 +15,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 // ------------------------------
-// WebRTC Setup
+// WebRTC
 // ------------------------------
 let localStream;
 let peerConnection;
@@ -36,7 +36,7 @@ const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 
 // ------------------------------
-// Start Camera
+// Camera
 // ------------------------------
 async function startCamera() {
   localStream = await navigator.mediaDevices.getUserMedia({
@@ -48,9 +48,9 @@ async function startCamera() {
 startCamera();
 
 // ------------------------------
-// Start Call
+// Create Peer
 // ------------------------------
-document.getElementById("startCall").onclick = async () => {
+function createPeer(callRef, isCaller) {
   peerConnection = new RTCPeerConnection(servers);
   remoteStream = new MediaStream();
   remoteVideo.srcObject = remoteStream;
@@ -65,37 +65,44 @@ document.getElementById("startCall").onclick = async () => {
     );
   };
 
+  peerConnection.onicecandidate = e => {
+    if (!e.candidate) return;
+    callRef
+      .child(isCaller ? "offerCandidates" : "answerCandidates")
+      .push(JSON.stringify(e.candidate));
+  };
+}
+
+// ------------------------------
+// START CALL
+// ------------------------------
+document.getElementById("startCall").onclick = async () => {
   const callId = Math.floor(100000 + Math.random() * 900000).toString();
   alert("Share this Call ID:\n\n" + callId);
 
   const callRef = db.ref("calls/" + callId);
+  await callRef.set({ created: Date.now() });
 
-  peerConnection.onicecandidate = e => {
-    if (e.candidate) {
-      callRef.child("offerCandidates").push(JSON.stringify(e.candidate));
-    }
-  };
+  createPeer(callRef, true);
 
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
-  await callRef.set({ offer: JSON.stringify(offer) });
+  await callRef.child("offer").set(JSON.stringify(offer));
 
   callRef.child("answer").on("value", async snap => {
     if (!snap.exists()) return;
-    const answer = JSON.parse(snap.val());
-    if (!peerConnection.currentRemoteDescription) {
-      await peerConnection.setRemoteDescription(answer);
-    }
+    await peerConnection.setRemoteDescription(JSON.parse(snap.val()));
   });
 
   callRef.child("answerCandidates").on("child_added", snap => {
-    const candidate = JSON.parse(snap.val());
-    peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    peerConnection.addIceCandidate(
+      new RTCIceCandidate(JSON.parse(snap.val()))
+    );
   });
 };
 
 // ------------------------------
-// Join Call
+// JOIN CALL (NO INVALID ID)
 // ------------------------------
 document.getElementById("joinCall").onclick = async () => {
   const callId = prompt("Enter Call ID:");
@@ -103,58 +110,42 @@ document.getElementById("joinCall").onclick = async () => {
 
   const callRef = db.ref("calls/" + callId);
 
-  let offerSnap = null;
-  for (let i = 0; i < 5; i++) {
-    offerSnap = await callRef.child("offer").get();
-    if (offerSnap.exists()) break;
-    await new Promise(r => setTimeout(r, 1000));
-  }
-
-  if (!offerSnap.exists()) {
-    alert("Invalid Call ID");
-    return;
-  }
-
-  peerConnection = new RTCPeerConnection(servers);
-  remoteStream = new MediaStream();
-  remoteVideo.srcObject = remoteStream;
-
-  localStream.getTracks().forEach(track =>
-    peerConnection.addTrack(track, localStream)
-  );
-
-  peerConnection.ontrack = e => {
-    e.streams[0].getTracks().forEach(track =>
-      remoteStream.addTrack(track)
-    );
-  };
-
-  peerConnection.onicecandidate = e => {
-    if (e.candidate) {
-      callRef.child("answerCandidates").push(JSON.stringify(e.candidate));
+  callRef.child("offer").on("value", async snap => {
+    if (!snap.exists()) {
+      alert("Waiting for host...");
+      return;
     }
-  };
 
-  const offer = JSON.parse(offerSnap.val());
-  await peerConnection.setRemoteDescription(offer);
+    callRef.child("offer").off(); // stop listening again
 
-  const answer = await peerConnection.createAnswer();
-  await peerConnection.setLocalDescription(answer);
-  await callRef.child("answer").set(JSON.stringify(answer));
+    createPeer(callRef, false);
 
-  callRef.child("offerCandidates").on("child_added", snap => {
-    const candidate = JSON.parse(snap.val());
-    peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    const offer = JSON.parse(snap.val());
+    await peerConnection.setRemoteDescription(offer);
+
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    await callRef.child("answer").set(JSON.stringify(answer));
+
+    callRef.child("offerCandidates").on("child_added", s => {
+      peerConnection.addIceCandidate(
+        new RTCIceCandidate(JSON.parse(s.val()))
+      );
+    });
   });
 };
 
 // ------------------------------
-// Screen Sharing
+// Screen Share
 // ------------------------------
 document.getElementById("shareScreen").onclick = async () => {
-  const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-  const screenTrack = screenStream.getVideoTracks()[0];
-  const sender = peerConnection.getSenders().find(s => s.track.kind === "video");
+  const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
+  const screenTrack = screen.getVideoTracks()[0];
+
+  const sender = peerConnection
+    .getSenders()
+    .find(s => s.track.kind === "video");
+
   sender.replaceTrack(screenTrack);
 
   screenTrack.onended = () => {
