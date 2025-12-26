@@ -1,5 +1,5 @@
 // ------------------------------
-// 1. Firebase Configuration
+// 1. Firebase Config
 // ------------------------------
 const firebaseConfig = {
   apiKey: "AIzaSyB86zcSMsbtHruh1sd-TMvwgqRcpheEVbw",
@@ -18,10 +18,9 @@ const db = firebase.database();
 // 2. WebRTC Setup
 // ------------------------------
 let localStream;
-let remoteStream = new MediaStream();
+let remoteStream;
 let peerConnection;
 
-// STUN + TURN (IMPORTANT FOR MOBILE)
 const servers = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
@@ -66,12 +65,10 @@ document.getElementById("startCall").onclick = async () => {
     );
   };
 
-  // 🔑 Dynamic Call ID
   const callId = Math.floor(100000 + Math.random() * 900000).toString();
   alert("Share this Call ID:\n\n" + callId);
 
   const callRef = db.ref("calls/" + callId);
-  await callRef.remove(); // clear old junk
 
   peerConnection.onicecandidate = event => {
     if (event.candidate) {
@@ -81,9 +78,11 @@ document.getElementById("startCall").onclick = async () => {
 
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
-  await callRef.child("offer").set(JSON.stringify(offer));
 
-  // ✅ Listen for answer
+  await callRef.set({
+    offer: JSON.stringify(offer)
+  });
+
   callRef.child("answer").on("value", async snapshot => {
     if (!snapshot.exists()) return;
     const answer = JSON.parse(snapshot.val());
@@ -92,7 +91,6 @@ document.getElementById("startCall").onclick = async () => {
     }
   });
 
-  // ✅ LISTEN FOR ANSWER ICE (FIX)
   callRef.child("answerCandidates").on("child_added", snapshot => {
     const candidate = JSON.parse(snapshot.val());
     peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
@@ -107,9 +105,17 @@ document.getElementById("joinCall").onclick = async () => {
   if (!callId) return;
 
   const callRef = db.ref("calls/" + callId);
-  const offerSnapshot = await callRef.child("offer").get();
+
+  // Wait until offer exists (max 5 seconds)
+  let offerSnapshot;
+  for (let i = 0; i < 5; i++) {
+    offerSnapshot = await callRef.child("offer").get();
+    if (offerSnapshot.exists()) break;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+
   if (!offerSnapshot.exists()) {
-    alert("Invalid Call ID");
+    alert("Invalid Call ID or host not ready");
     return;
   }
 
@@ -140,7 +146,6 @@ document.getElementById("joinCall").onclick = async () => {
   await peerConnection.setLocalDescription(answer);
   await callRef.child("answer").set(JSON.stringify(answer));
 
-  // ✅ Listen for caller ICE
   callRef.child("offerCandidates").on("child_added", snapshot => {
     const candidate = JSON.parse(snapshot.val());
     peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
@@ -151,6 +156,8 @@ document.getElementById("joinCall").onclick = async () => {
 // 6. Screen Sharing
 // ------------------------------
 document.getElementById("shareScreen").onclick = async () => {
+  if (!peerConnection) return alert("Start or Join a call first");
+
   const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
   const screenTrack = screenStream.getVideoTracks()[0];
 
